@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>D3plus Network — Minimal (JSON nodes + CSV edges)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      min-height: 100vh;
+      background: #f7f7f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Centered padded container */
+    .center-wrap {
+      background: #fff;
+      padding: 20px 24px;              /* your padding */
+      border: 1px solid #eee;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.06);
+      box-sizing: border-box;
+
+      /* make it responsive but not full-bleed */
+      width: min(1200px, calc(100vw - 48px));
+      height: min(800px,  calc(100vh - 48px));
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Viz fills the padded box */
+    #viz { width: 100%; height: 100%; }
+
+    /* Uniform edges */
+    #viz .d3plus-Links path {
+      stroke: #252525 !important;
+      stroke-opacity: 1 !important;
+      stroke-width: 1.5px !important;
+    }
+  </style>
+  <script src="https://unpkg.com/d3"></script>
+  <script src="https://unpkg.com/d3plus@2"></script>
+</head>
+<body>
+  <!-- NEW wrapper -->
+  <div class="center-wrap">
+    <div id="viz"></div>
+  </div>
+
+  <script>
+  (async () => {
+    try {
+      const data = await fetch("d3plus_network_us.json").then(r => r.json());
+      const meta = data.meta || {};
+
+      const idCol    = meta.id_col    || "id";
+      const xCol     = meta.x_col     || "x";
+      const yCol     = meta.y_col     || "y";
+      const labelCol = meta.label_col || "label";
+      const colorCol = meta.color_col || "color";
+      const sizeCol  = meta.size_col  || "size";
+
+      const nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => {
+        const id = String(n[idCol]);
+        const x = (n[xCol] != null && isFinite(+n[xCol])) ? +n[xCol] : undefined;
+        const y = (n[yCol] != null && isFinite(+n[yCol])) ? +n[yCol] : undefined;
+        const color = (n[colorCol] && typeof n[colorCol] === "string") ? n[colorCol] : "#9e9e9e";
+        const size  = (n[sizeCol] != null && isFinite(+n[sizeCol])) ? +n[sizeCol] : 10;
+        return { ...n, id, x, y, _baseColor: color, _sizeRaw: size };
+      });
+
+      const nodeIds = new Set(nodes.map(d => d.id));
+      const edgeRows = await d3.csv("us_edges.csv", d3.autoType);
+      const links = edgeRows
+        .filter(r => r && r.source != null && r.target != null)
+        .map(r => ({
+          source: String(r.source).trim(),
+          target: String(r.target).trim(),
+          weight: (r.weight == null || isNaN(+r.weight)) ? 1 : +r.weight
+        }))
+        .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+
+      const titleText = d =>
+        (d[labelCol] ?? d.label ?? d[idCol] ?? d.id ?? "").toString();
+      const darker = (c, k = 0.8) => {
+        const col = d3.color(c);
+        return col ? col.darker(k).toString() : c;
+      };
+      const buildTooltip = d => {
+        const rows = [];
+        if (titleText(d)) rows.push(["Name", titleText(d)]);
+        if (d.degree != null) rows.push(["Degree", d.degree]);
+        return rows;
+      };
+
+      const viz = new d3plus.Network()
+        .select("#viz")
+        .nodes(nodes)
+        .links(links)
+        .size(d => (isFinite(+d._sizeRaw) ? +d._sizeRaw : 10))
+        .sizeMin(3)
+        .sizeMax(23)
+        .x("x")
+        .y("y")
+        .shapeConfig({
+          fill: d => d._baseColor,
+          stroke: d => darker(d._baseColor, 0.8),
+          strokeWidth: 1,
+          label: d => titleText(d),
+          labelConfig: { fontMax: 16 }
+        })
+        .tooltipConfig({ title: titleText, tbody: buildTooltip })
+        .zoom(true);
+
+      await viz.render();
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById("viz").innerHTML =
+        "<p style='padding:16px;font-family:sans-serif;color:#900'>Failed to load <code>d3plus_network.json</code> and/or <code>kz_edges.csv</code>.<br>Edges CSV must have columns: <code>source,target,weight</code>.</p>";
+    }
+  })();
+  </script>
+</body>
+</html>

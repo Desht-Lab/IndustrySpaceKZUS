@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Networks — Landing</title>
+    <style>
+      :root{
+        --bg: #f7f7f8;
+        --card: #ffffff;
+        --muted: #69707a;
+        --accent: #0b5fff; /* subtle blue accent */
+        --border: #e6e9ee;
+      }
+      html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,'Helvetica Neue',Arial;background:var(--bg);color:#0b1220}
+      body{display:flex;align-items:center;justify-content:center;padding:32px}
+      .card{width:100%;max-width:680px;background:var(--card);border-radius:12px;padding:28px 28px;box-shadow:0 6px 18px rgba(15,18,24,0.06);border:1px solid var(--border)}
+      .row{display:flex;align-items:center;gap:16px}
+      .logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(180deg,var(--accent),#0066ff);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px}
+      h1{margin:0;font-size:20px;font-weight:600;color:#081029}
+      p.lead{margin:6px 0 0;color:var(--muted);font-size:13px}
+      .buttons{display:flex;gap:12px;margin-top:18px}
+      .btn{padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:8px}
+      .btn.primary{background:var(--accent);color:#fff;border:1px solid rgba(11,95,255,0.12);box-shadow:0 6px 18px rgba(11,95,255,0.08)}
+      .btn.ghost{background:transparent;color:#081029;border:1px solid var(--border)}
+      .btn:focus{outline:3px solid rgba(11,95,255,0.12);outline-offset:2px}
+      .note{margin-top:14px;color:var(--muted);font-size:13px}
+      @media (max-width:520px){.row{flex-direction:row}.buttons{flex-direction:column;align-items:stretch}.btn{width:100%;justify-content:center}}
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main">
+      <div class="row">
+        <div class="logo">De</div>
+        <div>
+          <h1>Networks</h1>
+          <p class="lead">Select a network to view interactive industry-space visualizations.</p>
+        </div>
+      </div>
+
+      <div class="buttons">
+        <a class="btn primary" href="kz_network.html" title="Open Kazakhstan industry space">Kazakhstan industry space</a>
+        <a class="btn ghost" href="us_network.html" title="Open USA industry space">USA industry space</a>
+      </div>
+
+      <p class="note">Tip: use right-click → “Open in new tab” to keep this page available.</p>
+    </main>
+  </body>
+</html>

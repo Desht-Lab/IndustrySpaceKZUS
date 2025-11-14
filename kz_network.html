@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>D3plus Network — Minimal (JSON nodes + CSV edges)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      min-height: 100vh;
+      background: #f7f7f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* Use requested system font stack */
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      color: #222;
+      font-size: 14px;
+    }
+
+    /* Layout: filter column + viz area */
+    .layout {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      width: min(1400px, calc(100vw - 48px));
+      box-sizing: border-box;
+      padding: 0 12px;
+    }
+
+    /* Centered padded container (viz) */
+    .center-wrap {
+      background: #fff;
+      padding: 20px 24px;              /* your padding */
+      border: 1px solid #eee;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.06);
+      box-sizing: border-box;
+
+      /* allow the viz area to grow and fill remaining space */
+      flex: 1 1 auto;
+      min-width: 420px;
+      height: min(800px, calc(100vh - 48px));
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Viz fills the padded box */
+    #viz { width: 100%; height: 100%; }
+
+    /* Filter bar (placed outside the network box) */
+    .filter-bar {
+      width: 320px;
+      margin: 12px 0;
+      display: flex;
+      flex-direction: column; /* stack items vertically */
+      gap: 8px;
+      align-items: stretch;  /* stretch children to full width */
+      background: #fff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+      border: 1px solid #eee;
+      box-sizing: border-box;
+    }
+    .filter-label {
+      color: #333;
+      font-size: 13px;
+      margin: 0 0 6px 2px;
+      white-space: nowrap;
+    }
+    .ts-select {
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      font-size: 14px;
+      box-sizing: border-box;
+      font-family: inherit; /* ensure select uses same stack */
+    }
+    .filter-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 1px solid #0b76d1;
+      color: #0b76d1;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      width: max-content;
+      align-self: flex-start; /* keep button under the select, left aligned */
+      font-family: inherit; /* use system font stack */
+    }
+    .filter-btn:hover {
+      background: #0b76d1;
+      color: white;
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .legend-item {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #f0f0f0;
+      font-size: 13px;
+      color: #333;
+    }
+    .legend-item.active {
+      border-color: #0b76d1;
+      box-shadow: 0 4px 12px rgba(11,118,209,0.08);
+      background: linear-gradient(180deg, rgba(11,118,209,0.04), #fff);
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.06) inset;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    /* Uniform edges */
+    #viz .d3plus-Links path {
+      stroke: #252525 !important;
+      stroke-opacity: 1 !important;
+      stroke-width: 1.5px !important;
+    }
+  </style>
+  <script src="https://unpkg.com/d3"></script>
+  <script src="https://unpkg.com/d3plus@2"></script>
+  <link rel="stylesheet" href="lib/tom-select/tom-select.css">
+  <script src="lib/tom-select/tom-select.complete.min.js"></script>
+</head>
+<body>
+  <!-- NEW wrapper -->
+  <div class="layout">
+    <!-- Filter bar moved outside the network container -->
+    <div class="filter-bar" role="region" aria-label="Rayon filter">
+      <span class="filter-label">Choose district</span>
+      <select id="rayon-select" class="ts-select" aria-label="Select rayon">
+        <option value="">All rayons</option>
+      </select>
+      <button id="clear-rayon" class="filter-btn" title="Clear selection">Clear</button>
+      <div id="legend" class="legend" aria-hidden="false" style="margin-top:6px"></div>
+    </div>
+
+    <div class="center-wrap" style="position:relative;">
+      <div id="viz"></div>
+    </div>
+  </div>
+
+  <script>
+  (async () => {
+    try {
+      const data = await fetch("d3plus_network_kz.json").then(r => r.json());
+      const meta = data.meta || {};
+
+      const idCol    = meta.id_col    || "id";
+      const xCol     = meta.x_col     || "x";
+      const yCol     = meta.y_col     || "y";
+      const labelCol = meta.label_col || "label";
+      const colorCol = meta.color_col || "color";
+      const sizeCol  = meta.size_col  || "size";
+      // Load color mapping CSV (id3 -> color.1, group)
+      let idColor = new Map();
+      let idGroup = new Map();
+      let groupColor = new Map();
+      try {
+        const colorRows = await d3.csv("kz_colors.csv");
+        for (const r of colorRows) {
+          // Field names: id3, color.1, group (CSV has a leading empty column sometimes)
+          const rawId = r['id3'] ?? r.id3 ?? r[' id3'] ?? r['id'];
+          if (rawId == null || rawId === "") continue;
+          const idKey = String(Math.trunc(+rawId));
+          const col = (r['color.1'] ?? r['color'] ?? '').toString().trim();
+          const grp = (r['group'] ?? r['Group'] ?? '').toString();
+          if (col) idColor.set(idKey, col);
+          if (grp) idGroup.set(idKey, grp);
+          if (grp && col && !groupColor.has(grp)) groupColor.set(grp, col);
+        }
+      } catch (e) {
+        console.warn('Failed to load kz_colors.csv', e);
+      }
+
+      const nodes = (Array.isArray(data.nodes) ? data.nodes : []).map(n => {
+        const id = String(n[idCol]);
+        const x = (n[xCol] != null && isFinite(+n[xCol])) ? +n[xCol] : undefined;
+        const y = (n[yCol] != null && isFinite(+n[yCol])) ? +n[yCol] : undefined;
+        // Prefer color from kz_colors.csv (match by integer id), fallback to node color or default
+        let mappedColor = null;
+        try { mappedColor = idColor.get(String(Math.trunc(+id))); } catch (e) { mappedColor = null; }
+        const color = mappedColor || ((n[colorCol] && typeof n[colorCol] === "string") ? n[colorCol] : "#9e9e9e");
+        const size  = (n[sizeCol] != null && isFinite(+n[sizeCol])) ? +n[sizeCol] : 10;
+        const group = idGroup.get(String(Math.trunc(+id))) || null;
+        return { ...n, id, x, y, _baseColor: color, _sizeRaw: size, _group: group };
+      });
+
+      const nodeIds = new Set(nodes.map(d => d.id));
+      const edgeRows = await d3.csv("kz_edges.csv", d3.autoType);
+      const links = edgeRows
+        .filter(r => r && r.source != null && r.target != null)
+        .map(r => ({
+          source: String(r.source).trim(),
+          target: String(r.target).trim(),
+          weight: (r.weight == null || isNaN(+r.weight)) ? 1 : +r.weight
+        }))
+        .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+
+      const titleText = d =>
+        (d[labelCol] ?? d.label ?? d[idCol] ?? d.id ?? "").toString();
+      const darker = (c, k = 0.8) => {
+        const col = d3.color(c);
+        return col ? col.darker(k).toString() : c;
+      };
+      const buildTooltip = d => {
+        const rows = [];
+        if (titleText(d)) rows.push(["Name", titleText(d)]);
+        if (d.degree != null) rows.push(["Degree", d.degree]);
+        return rows;
+      };
+
+      // Load per-rayon OKED rca/spec data so we can highlight nodes by rayon
+      const specRows = await d3.csv("kz_spec.csv", d3.autoType);
+
+      // Build mapping: rayonName -> Set of OKED codes (string of integer) where m_cp == 1
+      const rayonToOked = new Map();
+      for (const r of specRows) {
+        try {
+          const mcp = +(r.m_cp ?? r['m_cp'] ?? r['m_cp']);
+          if (!mcp) continue;
+          const rayonName = (r.rayon ?? r['rayon'] ?? r['rayon_name'] ?? "").toString();
+          if (!rayonName) continue;
+          const okedRaw = r['Код ОКЭД*'] ?? r['Код ОКЭД'] ?? r['Код ОКЭД*'];
+          if (okedRaw == null || okedRaw === "") continue;
+          const okedKey = String(Math.trunc(+okedRaw));
+          if (!rayonToOked.has(rayonName)) rayonToOked.set(rayonName, new Set());
+          rayonToOked.get(rayonName).add(okedKey);
+        } catch (e) {
+          // ignore malformed rows
+        }
+      }
+
+      // Populate rayon select (alphabetical)
+      const rayonList = Array.from(rayonToOked.keys()).sort((a,b)=>a.localeCompare(b, 'ru'));
+      const selectEl = document.getElementById('rayon-select');
+      for (const name of rayonList) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        selectEl.appendChild(opt);
+      }
+
+      // Populate legend using groupColor map (if available)
+      const legendEl = document.getElementById('legend');
+      if (legendEl && typeof groupColor !== 'undefined') {
+        // Clear
+        legendEl.innerHTML = '';
+        for (const [grp, col] of groupColor.entries()) {
+          const item = document.createElement('div');
+          item.className = 'legend-item';
+          item.dataset.group = grp;
+          item.style.cursor = 'pointer';
+          const sw = document.createElement('span');
+          sw.className = 'legend-swatch';
+          sw.style.background = col || '#ccc';
+          item.appendChild(sw);
+          const label = document.createElement('span');
+          label.textContent = grp;
+          item.appendChild(label);
+          // click toggles active group
+          item.addEventListener('click', () => {
+            const clickedGroup = item.dataset.group;
+            if (activeGroup === clickedGroup) {
+              // toggle off
+              activeGroup = null;
+              item.classList.remove('active');
+            } else {
+              // clear any other active legend items
+              document.querySelectorAll('.legend-item.active').forEach(el => el.classList.remove('active'));
+              activeGroup = clickedGroup;
+              item.classList.add('active');
+            }
+            // apply combined filter (intersection if rayon also active)
+            applyCombinedFilter();
+          });
+          legendEl.appendChild(item);
+        }
+      }
+
+      // Make it searchable using Tom Select (local copy present in repo)
+      // Keep a reference so we can clear it programmatically
+      let tomSelectInstance = null;
+      try {
+        tomSelectInstance = new TomSelect('#rayon-select', { maxOptions: 50, allowEmptyOption: true });
+      } catch (e) {
+        // if TomSelect fails, the plain select still works
+        console.warn('TomSelect init failed', e);
+      }
+
+      const viz = new d3plus.Network()
+        .select("#viz")
+        .nodes(nodes)
+        .links(links)
+        .size(d => (isFinite(+d._sizeRaw) ? +d._sizeRaw : 10))
+        .sizeMin(3)
+        .sizeMax(8)
+        .x("x")
+        .y("y")
+        .shapeConfig({
+          fill: d => d._baseColor,
+          stroke: d => darker(d._baseColor, 0.8),
+          strokeWidth: 1,
+          label: d => titleText(d),
+          labelConfig: { fontMax: 16 }
+        })
+        .tooltipConfig({ title: titleText, tbody: buildTooltip })
+        .zoom(true);
+
+      await viz.render();
+
+      // Filtering state and helper to update coloring based on active rayon and/or active group
+      // Behavior:
+      // - If neither activeRayon nor activeGroup: restore original colors
+      // - If only activeRayon: keep nodes whose OKED in rayon; grey others
+      // - If only activeGroup: keep nodes whose _group === activeGroup; grey others
+      // - If both active: keep nodes that satisfy BOTH (intersection)
+      const _greyOut = '#d6d6d6';
+      let activeRayon = null;
+      let activeGroup = null;
+
+      function applyCombinedFilter() {
+        let okedSet = null;
+        if (activeRayon && rayonToOked.has(activeRayon)) okedSet = rayonToOked.get(activeRayon);
+
+        // If no filters active, restore original colors
+        if (!okedSet && !activeGroup) {
+          viz.shapeConfig({ fill: d => d._baseColor, stroke: d => darker(d._baseColor, 0.8) });
+          viz.render();
+          return;
+        }
+
+        viz.shapeConfig({
+          fill: d => {
+            try {
+              const idKey = String(Math.trunc(+d.id));
+              const matchRayon = okedSet ? okedSet.has(idKey) : null;
+              const matchGroup = activeGroup ? (d._group === activeGroup) : null;
+
+              if (okedSet && activeGroup) {
+                if (matchRayon && matchGroup) return d._baseColor;
+                return _greyOut;
+              }
+              if (okedSet) {
+                if (matchRayon) return d._baseColor;
+                return _greyOut;
+              }
+              if (activeGroup) {
+                if (matchGroup) return d._baseColor;
+                return _greyOut;
+              }
+            } catch (e) {}
+            return d._baseColor;
+          },
+          stroke: d => {
+            try {
+              const idKey = String(Math.trunc(+d.id));
+              const matchRayon = okedSet ? okedSet.has(idKey) : null;
+              const matchGroup = activeGroup ? (d._group === activeGroup) : null;
+
+              if (okedSet && activeGroup) {
+                if (matchRayon && matchGroup) return darker(d._baseColor, 0.8);
+                return darker(_greyOut, 0.8);
+              }
+              if (okedSet) {
+                if (matchRayon) return darker(d._baseColor, 0.8);
+                return darker(_greyOut, 0.8);
+              }
+              if (activeGroup) {
+                if (matchGroup) return darker(d._baseColor, 0.8);
+                return darker(_greyOut, 0.8);
+              }
+            } catch (e) {}
+            return darker(d._baseColor, 0.8);
+          }
+        });
+        viz.render();
+      }
+
+      // Wire up select events
+      const selectElNow = document.getElementById('rayon-select');
+      if (selectElNow) {
+        selectElNow.addEventListener('change', (ev) => {
+          const val = ev.target.value;
+          activeRayon = val || null;
+          applyCombinedFilter();
+        });
+      }
+      const clearBtn = document.getElementById('clear-rayon');
+      if (clearBtn) clearBtn.addEventListener('click', () => {
+        if (selectElNow) {
+          // clear native select value
+          selectElNow.value = '';
+          // clear TomSelect visible input if present
+          try {
+            if (tomSelectInstance && typeof tomSelectInstance.clear === 'function') {
+              tomSelectInstance.clear();
+              // ensure internal value cleared too
+              tomSelectInstance.setValue('');
+            }
+          } catch (e) { /* ignore */ }
+          // older TomSelect versions also expose control on the select
+          if (selectElNow.control) selectElNow.control.clear();
+        }
+        // clear both filters
+        activeRayon = null;
+        activeGroup = null;
+        // remove active class from legend items
+        document.querySelectorAll('.legend-item.active').forEach(el => el.classList.remove('active'));
+        applyCombinedFilter();
+      });
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById("viz").innerHTML =
+        "<p style='padding:16px;font-family:sans-serif;color:#900'>Failed to load <code>d3plus_network.json</code> and/or <code>kz_edges.csv</code>.<br>Edges CSV must have columns: <code>source,target,weight</code>.</p>";
+    }
+  })();
+  </script>
+</body>
+</html>
